@@ -1,12 +1,7 @@
-# Object Pose Utils
-A set of tools for object pose estimation with ros.
-
-## Playing a Image Folder:
-```
-roslaunch object_pose_utils play_image_folder.launch camera_info_file:=/path/to/camera_info.yaml image_folder:=/path/to/image/folder/
-```
+# AR Tracking Tools
+A set of tools for tracking artags in ros.
 
 ## Tracking a AR Bundle:
 ```
-roslaunch object_pose_utils image_folder_track_bundle.launch camera_info_file:=/path/to/camera_info.yaml image_folder:=/path/to/image/folder/
+roslaunch object_pose_utils image_folder_track_bundle.launch image_topic:=/image/topic info_topic:=/info/topic marker_size:=5.0 bundle_file:=/path/to/bundle.xml bundle_frame:=/marker_bundle
 ```
