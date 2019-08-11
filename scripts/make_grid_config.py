@@ -1,20 +1,6 @@
 #!/usr/bin/env python
 
-alvar_marker_config = \
-'''
-    <marker index="{0:d}" status="1">
-        <corner x="{1:}" y="{3:}" z="0.0" />
-        <corner x="{2:}" y="{3:}" z="0.0" />
-        <corner x="{2:}" y="{4:}" z="0.0" />
-        <corner x="{1:}" y="{4:}" z="0.0" />
-    </marker>
-'''
-
-def makeMarkerConfig(index, position, marker_size):
-    marker_config_str = alvar_marker_config.format(index, 
-        position[0], position[0]+marker_size,
-        position[1], position[1]+marker_size)
-    return marker_config_str                                    
+from ar_tracking_tools.bundle_xml_utils import makeMarkerConfigFlat
 
 def main():
     import os
@@ -46,8 +32,8 @@ def main():
     index = 0
     for j in range(args.grid_height):
         for k in range(args.grid_width):
-            config_str += makeMarkerConfig(index, 
-                (k*args.grid_square_size, j*args.grid_square_size),
+            config_str += makeMarkerConfigFlat(index, 
+                (k*args.grid_square_size, -j*args.grid_square_size),
                 args.marker_size)
             index += 1
     config_str += '</multimarker>'

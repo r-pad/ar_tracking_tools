@@ -9,27 +9,7 @@ import tf
 import tf2_ros
 from ar_track_alvar_msgs.msg import AlvarMarkers
 import xml.etree.ElementTree as ET
-
-def parseBundleXml(filename):
-    tree = ET.parse(filename)
-    root = tree.getroot()
-    centers = {}
-    corners = {}
-    min_pts = []
-    max_pts = []
-    for marker in root: 
-        idx = int(marker.get('index')) 
-        corner_pts = [] 
-        for corner in marker: 
-            corner_pts.append([float(corner.get('x'))/100.0, 
-                               float(corner.get('y'))/100.0, 
-                               float(corner.get('z'))/100.0]) 
-        corners[idx] = corner_pts
-        centers[idx] = np.mean(corner_pts, axis=0) 
-        min_pts.append(np.min(corner_pts, axis=0)) 
-        max_pts.append(np.max(corner_pts, axis=0)) 
-        interior = (np.max(min_pts, axis=0), np.min(max_pts, axis=0))
-    return corners, centers, interior
+from ar_tracking_tools.bundle_xml_utils import parseBundleXml
 
 class ARTagRANSAC(object):
     def __init__(self):
@@ -67,21 +47,21 @@ class ARTagRANSAC(object):
                     #confidence.append(marker.confidence)
                     marker_pts.extend(corners[:,:3])
                     bundle_pts.extend(list(self.marker_corners[marker.id]))
-         
-        pts_src = open3d.PointCloud()
-        pts_src.points = open3d.Vector3dVector(marker_pts) 
-        pts_tgt = open3d.PointCloud()
-        pts_tgt.points = open3d.Vector3dVector(bundle_pts)
-        corres = open3d.Vector2iVector(np.tile(np.arange(len(marker_pts)),[2,1]).T)
-        ransac_res = open3d.registration_ransac_based_on_correspondence(pts_src, pts_tgt, corres, self.max_corres_dist)
-        trans_ransac = ransac_res.transformation
+        if(len(marker_pts) > 0): 
+            pts_src = open3d.PointCloud()
+            pts_src.points = open3d.Vector3dVector(marker_pts) 
+            pts_tgt = open3d.PointCloud()
+            pts_tgt.points = open3d.Vector3dVector(bundle_pts)
+            corres = open3d.Vector2iVector(np.tile(np.arange(len(marker_pts)),[2,1]).T)
+            ransac_res = open3d.registration_ransac_based_on_correspondence(pts_src, pts_tgt, corres, self.max_corres_dist)
+            trans_ransac = ransac_res.transformation
 
-        self.tf_broadcaster.sendTransform(trans_ransac[:3,3],
-                                          tf.transformations.quaternion_from_matrix(trans_ransac),
-                                          marker.header.stamp,
-                                          marker.header.frame_id,
-                                          self.frame_id,
-                                          )
+            self.tf_broadcaster.sendTransform(trans_ransac[:3,3],
+                                              tf.transformations.quaternion_from_matrix(trans_ransac),
+                                              marker.header.stamp,
+                                              marker.header.frame_id,
+                                              self.frame_id,
+                                              )
 def main():
     rospy.init_node("ar_tag_ransac") 
     obj_masker = ARTagRANSAC()
