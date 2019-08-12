@@ -1,0 +1,29 @@
+<launch>
+	<arg name="bundle_file" />
+    
+    <arg name="image_topic" value="/camera/rgb/image_color" />
+	<arg name="info_topic" value="/camera/rgb/camera_info" />
+    <arg name="pointcloud_topic" value="/camera/depth_registered/points" />
+	<arg name="output_frame" default="/camera_rgb_optical_frame" />
+
+    <arg name="marker_size" default="5.0" />
+	<arg name="max_new_marker_error" default="0.2" />
+	<arg name="max_track_error" default="0.2" />
+	
+	<arg name="bundle_frame" default="/marker_bundle" />
+
+    <arg name="rviz" default="False" />
+    <arg name="use_depth" default="False" />
+
+    <include file="$(find openni_launch)/launch/openni.launch"/>
+    
+    <group if="$(arg use_depth)">
+        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg image_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
+    </group>
+    <group unless="$(arg use_depth)">
+        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundles" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg pointcloud_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
+    </group>
+
+    <node pkg="rviz" type="rviz" name="rviz" output="log" if="$(eval rviz)"/>
+    
+</launch>
