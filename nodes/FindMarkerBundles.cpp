@@ -68,7 +68,7 @@
 #include <ar_track_alvar/filter/medianFilter.h>
 
 
-#define MAIN_MARKER 1
+#define BUNDLE_MARKER 1
 #define VISIBLE_MARKER 2
 #define GHOST_MARKER 3
 
@@ -105,6 +105,8 @@ ata::MedianFilter **med_filts;
 int med_filt_size;
 
 double marker_size;
+map<int, double> bundle_marker_sizes;
+
 double max_new_marker_error;
 double max_track_error;
 std::string cam_image_topic; 
@@ -501,9 +503,9 @@ void GetMultiMarkerPoses(IplImage *image, ARCloud &cloud) {
 
 
 // Given the pose of a marker, builds the appropriate ROS messages for later publishing 
-void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_msg, tf::StampedTransform &CamToOutput, visualization_msgs::Marker *rvizMarker, ar_track_alvar_msgs::AlvarMarker *ar_pose_marker, int confidence){
+void publishBundleTransform(int bundle_id, int id, Pose &p, sensor_msgs::ImageConstPtr image_msg, tf::StampedTransform &CamToOutput, ar_track_alvar_msgs::AlvarMarker *ar_pose_marker, int confidence){
   double px,py,pz,qx,qy,qz,qw;
-	
+
   px = p.translation[0]/100.0;
   py = p.translation[1]/100.0;
   pz = p.translation[2]/100.0;
@@ -521,14 +523,45 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
   tf::Transform m (tf::Quaternion::getIdentity (), markerOrigin);
   tf::Transform markerPose = t * m;
 
-  //Publish the cam to marker transform for each marker
-  std::string markerFrame = "ar_marker_";
+  //Publish the cam to marker transform for main marker in each bundle
+  std::string markerFrame = "bundle_";
   std::stringstream out;
-  out << id;
+  out << bundle_id;
   std::string id_string = out.str();
   markerFrame += id_string;
   tf::StampedTransform camToMarker (t, image_msg->header.stamp, image_msg->header.frame_id, markerFrame.c_str());
   tf_broadcaster->sendTransform(camToMarker);
+  //Take the pose of the tag in the camera frame and convert to the n frame (usually torso_lift_link for the PR2)
+  tf::Transform tagPoseOutput = CamToOutput * markerPose;
+  //Create the pose marker message
+  tf::poseTFToMsg (tagPoseOutput, ar_pose_marker->pose.pose);
+  ar_pose_marker->header.frame_id = output_frame;
+  ar_pose_marker->header.stamp = image_msg->header.stamp;
+  ar_pose_marker->id = id;
+  ar_pose_marker->confidence = confidence;
+
+}
+
+// Given the pose of a marker, builds the appropriate ROS messages for later publishing 
+void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_msg, tf::StampedTransform &CamToOutput, visualization_msgs::Marker *rvizMarker){
+  double px,py,pz,qx,qy,qz,qw;
+
+  px = p.translation[0]/100.0;
+  py = p.translation[1]/100.0;
+  pz = p.translation[2]/100.0;
+  qx = p.quaternion[1];
+  qy = p.quaternion[2];
+  qz = p.quaternion[3];
+  qw = p.quaternion[0];
+
+  //Get the marker pose in the camera frame
+  tf::Quaternion rotation (qx,qy,qz,qw);
+  tf::Vector3 origin (px,py,pz);
+  tf::Transform t (rotation, origin);  //transform from cam to marker
+
+  tf::Vector3 markerOrigin (0, 0, 0);
+  tf::Transform m (tf::Quaternion::getIdentity (), markerOrigin);
+  tf::Transform markerPose = t * m;
 
   //Create the rviz visualization message
   tf::poseTFToMsg (markerPose, rvizMarker->pose);
@@ -536,11 +569,16 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
   rvizMarker->header.stamp = image_msg->header.stamp;
   rvizMarker->id = id;
 
-  rvizMarker->scale.x = 1.0 * marker_size/100.0;
-  rvizMarker->scale.y = 1.0 * marker_size/100.0;
-  rvizMarker->scale.z = 0.2 * marker_size/100.0;
+  double rviz_marker_size = marker_size;
+  if(bundle_marker_sizes.find(id)!=bundle_marker_sizes.end())
+    rviz_marker_size = bundle_marker_sizes[id];
+  //cout<<"Marker Id " << id << ": " << rviz_marker_size << endl;
+  
+  rvizMarker->scale.x = 1.0 * rviz_marker_size/100.0;
+  rvizMarker->scale.y = 1.0 * rviz_marker_size/100.0;
+  rvizMarker->scale.z = 0.2 * rviz_marker_size/100.0;
 
-  if(type==MAIN_MARKER)
+  if(type>=0)
     rvizMarker->ns = "main_shapes";
   else
     rvizMarker->ns = "basic_shapes";
@@ -550,7 +588,7 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
   rvizMarker->action = visualization_msgs::Marker::ADD;
 
   //Determine a color and opacity, based on marker type
-  if(type==MAIN_MARKER){
+  if(type==BUNDLE_MARKER){
     rvizMarker->color.r = 1.0f;
     rvizMarker->color.g = 0.0f;
     rvizMarker->color.b = 0.0f;
@@ -569,25 +607,8 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
     rvizMarker->color.a = 0.5;
   }
 
-  rvizMarker->lifetime = ros::Duration (0.1);
-
-  // Only publish the pose of the master tag in each bundle, since that's all we really care about aside from visualization 
-  if(type==MAIN_MARKER){
-    //Take the pose of the tag in the camera frame and convert to the output frame (usually torso_lift_link for the PR2)
-    tf::Transform tagPoseOutput = CamToOutput * markerPose;
-
-    //Create the pose marker message
-    tf::poseTFToMsg (tagPoseOutput, ar_pose_marker->pose.pose);
-    ar_pose_marker->header.frame_id = output_frame;
-    ar_pose_marker->header.stamp = image_msg->header.stamp;
-    ar_pose_marker->id = id;
-    ar_pose_marker->confidence = confidence;
-  }
-  else
-    ar_pose_marker = NULL;
+  rvizMarker->lifetime = ros::Duration (1.0);
 }
-
-
 
 //Callback to handle getting kinect point clouds and processing them
 void getPointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &msg)
@@ -641,12 +662,16 @@ void getPointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &msg)
 
 	    // Don't draw if it is a master tag...we do this later, a bit differently
 	    bool should_draw = true;
-	    for(int j=0; j<n_bundles; j++){
-	      if(id == master_id[j]) should_draw = false;
-	    }
+	    //for(int j=0; j<n_bundles; j++){
+	    //  if(id == master_id[j]) should_draw = false;
+	    //}
 	    if(should_draw && (*(marker_detector.markers))[i].valid){
 	      Pose p = (*(marker_detector.markers))[i].pose;
-	      makeMarkerMsgs(VISIBLE_MARKER, id, p, image_msg, CamToOutput, &rvizMarker, &ar_pose_marker, 1);
+          int type = VISIBLE_MARKER;
+          if(bundle_marker_sizes.find(id)!=bundle_marker_sizes.end())
+              type = BUNDLE_MARKER;
+
+	      makeMarkerMsgs(type, id, p, image_msg, CamToOutput, &rvizMarker);
 	      rvizMarkerPub_.publish (rvizMarker);
 	    }
 	  }
@@ -656,8 +681,7 @@ void getPointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &msg)
       for(int i=0; i<n_bundles; i++)
 	{
 	  if(bundles_seen[i] > 0){
-	    makeMarkerMsgs(MAIN_MARKER, master_id[i], bundlePoses[i], image_msg, CamToOutput, &rvizMarker, &ar_pose_marker, bundles_seen[i]);
-	    rvizMarkerPub_.publish (rvizMarker);
+	    publishBundleTransform(i, master_id[i], bundlePoses[i], image_msg, CamToOutput, &ar_pose_marker, bundles_seen[i]);
 	    arPoseMarkers_.markers.push_back (ar_pose_marker);
 	  }
 	}
@@ -818,6 +842,7 @@ int main(int argc, char *argv[])
                   + pow(corner1.y - corner2.y, 2) 
                   + pow(corner1.z - corner2.z, 2)); 
           marker_detector.SetMarkerSizeForId(id_vector[j], edge_length);
+          bundle_marker_sizes[id_vector[j]] = edge_length;
       }
 
       multi_marker_bundles[i] = new MultiMarkerBundle(id_vector);	

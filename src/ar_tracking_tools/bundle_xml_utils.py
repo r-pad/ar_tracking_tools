@@ -64,7 +64,7 @@ def parseBundleXml(filename):
 marker_corners = np.array([[-1/2.,-1/2., 0],
                            [1/2.,-1/2., 0],
                            [1/2.,1/2., 0],
-                           [-1/2.,-1/2., 0]])
+                           [-1/2.,1/2., 0]])
 
 def makeBundleXml(point_sets, marker_size, edges = None, start_index = 0):
     # Calculate edges, if not given
