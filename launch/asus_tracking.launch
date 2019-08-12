@@ -9,8 +9,7 @@
     <arg name="marker_size" default="5.0" />
 	<arg name="max_new_marker_error" default="0.2" />
 	<arg name="max_track_error" default="0.2" />
-	
-	<arg name="bundle_frame" default="/marker_bundle" />
+    <arg name="median_filter_size" default="10" />
 
     <arg name="rviz" default="False" />
     <arg name="use_depth" default="False" />
@@ -18,10 +17,10 @@
     <include file="$(find openni_launch)/launch/openni.launch"/>
     
     <group if="$(arg use_depth)">
-        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg image_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
+        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundles" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg pointcloud_topic) $(arg info_topic) $(arg output_frame) $(arg median_filter_size) $(arg bundle_file)" />
     </group>
     <group unless="$(arg use_depth)">
-        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundles" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg pointcloud_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
+        <node name="ar_track_alvar" pkg="ar_tracking_tools" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg image_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
     </group>
 
     <node pkg="rviz" type="rviz" name="rviz" output="log" if="$(eval rviz)"/>
