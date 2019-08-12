@@ -1,0 +1,29 @@
+<launch>
+
+    <arg name="image_topic" value="/r2/head/prosilica/left/image_raw" />
+	<arg name="info_topic" value="/r2/head/prosilica/left/camera_info" />
+	<arg name="output_frame" default="/r2/head/prosilica/left_optical_frame" />
+
+    <arg name="marker_size" default="5.0" />
+	<arg name="max_new_marker_error" default="0.2" />
+	<arg name="max_track_error" default="0.2" />
+	
+
+    <arg name="rviz" default="False" />
+
+    <node name="republish" type="republish" pkg="image_transport" output="screen" args="compressed in:=/r2/head/prosilica/left/image_raw/ raw out:=$(arg image_topic) _image_transport:=compressed" />
+
+    <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkersNoKinect" respawn="false" output="screen">
+        <param name="marker_size" type="double" value="$(arg marker_size)" />
+        <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
+        <param name="max_track_error" type="double" value="$(arg max_track_error)" />
+        <param name="output_frame" type="string" value="$(arg output_frame)" />
+
+        <remap from="camera_image" to="$(arg image_topic)" />
+        <remap from="camera_info" to="$(arg info_topic)" />
+        <remap from="/ar_pose_marker" to="$(arg ar_topic)" />
+    </node>
+
+    <node pkg="rviz" type="rviz" name="rviz" output="log" if="$(eval rviz)"/>
+    
+</launch>
