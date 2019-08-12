@@ -8,22 +8,7 @@
 	<arg name="max_new_marker_error" default="0.2" />
 	<arg name="max_track_error" default="0.2" />
 	
+	<arg name="bundle_file" default="$(find ar_tracking_tools)/bundles/bag_bundle.xml" />
 
-    <arg name="rviz" default="False" />
-
-    <node name="republish" type="republish" pkg="image_transport" output="screen" args="compressed in:=/r2/head/prosilica/left/image_raw/ raw out:=$(arg image_topic) _image_transport:=compressed" />
-
-    <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkersNoKinect" respawn="false" output="screen">
-        <param name="marker_size" type="double" value="$(arg marker_size)" />
-        <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
-        <param name="max_track_error" type="double" value="$(arg max_track_error)" />
-        <param name="output_frame" type="string" value="$(arg output_frame)" />
-
-        <remap from="camera_image" to="$(arg image_topic)" />
-        <remap from="camera_info" to="$(arg info_topic)" />
-        <remap from="/ar_pose_marker" to="$(arg ar_topic)" />
-    </node>
-
-    <node pkg="rviz" type="rviz" name="rviz" output="log" if="$(eval rviz)"/>
-    
+    <node name="ar_tracking_tools" pkg="ar_tracking_tools" type="findMarkerBundlesNoKinect" respawn="false" output="screen" args="$(arg marker_size) $(arg max_new_marker_error) $(arg max_track_error) $(arg image_topic) $(arg info_topic) $(arg output_frame) $(arg bundle_file)" />
 </launch>
