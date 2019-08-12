@@ -79,18 +79,22 @@ def makeBundleXml(point_sets, marker_size, edges = None, start_index = 0):
             unfolded_pts = pts
         else:
             unfolded_pts = foldPoints(pts, edge)
-    
-        centers.extend(unfolded_pts)
+        
+        centers.append(unfolded_pts)
+        num_points += len(unfolded_pts)
 
     if(type(marker_size) not in [np.ndarray, list]):
-        marker_size = np.repeat(marker_size, len(centers))
-    
-    for index, (pt, sz) in enumerate(zip(centers, marker_size)):
-        corners = sz*marker_corners + pt
-        if(edge is not None):
-            corners = foldPoints(corners, edge, reverse=True)
-        config_str += alvar_marker_config.format(index + start_index, *corners.flatten())
-        num_points += 1
+        marker_size = np.repeat(marker_size, num_pts)
+
+    index = 0
+    for pts, edge in zip(centers, edges):
+        for pt in pts:
+            sz = marker_size[index]
+            corners = sz*marker_corners + pt
+            if(edge is not None):
+                corners = foldPoints(corners, edge, reverse=True)
+            config_str += alvar_marker_config.format(index + start_index, *corners.flatten())
+            index += 1
 
     full_config_str = '<?xml version="1.0" encoding="UTF-8" standalone="no" ?>\n' + \
         '<multimarker markers="{:d}">'.format(num_points) + config_str + '</multimarker>'
