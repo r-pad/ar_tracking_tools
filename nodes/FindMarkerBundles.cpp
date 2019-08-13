@@ -830,8 +830,9 @@ int main(int argc, char *argv[])
     MultiMarker loadHelper;
     string bundle_filename = argv[i + n_args_before_list];
     if(loadHelper.Load(bundle_filename.c_str(), FILE_FORMAT_XML)){
-      bundle_names.push_back(bundle_filename.substr(bundle_filename.find_last_of("/\\")+1, 
-                                             bundle_filename.find_last_of(".")));
+      size_t fn_start = bundle_filename.find_last_of("/\\")+1;
+      size_t fn_len = bundle_filename.find_last_of(".") - fn_start;
+      bundle_names.push_back(bundle_filename.substr(fn_start, fn_len));
       vector<int> id_vector = loadHelper.getIndices();
       for(int j=0; j<id_vector.size(); j++)
       {
