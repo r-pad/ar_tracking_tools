@@ -68,7 +68,9 @@ def makeBundlePdf(point_sets, marker_size,
                   paper_size = None, 
                   text_size = None, 
                   margin = 1., 
-                  overlap = 2.):
+                  overlap = 2.,
+                  rosette_positions = None, 
+                  rosette_size = 1.):
     """
     Create a bundle pdf from set of points, seperated by face. 
     First set should be the central face
@@ -91,6 +93,7 @@ def makeBundlePdf(point_sets, marker_size,
         pts.extend(p)
     flat_pts = np.stack(flat_pts)[:,:2]
     
+
     # Flattens all edge end points
     flat_edges = []
     for e in edges:
@@ -98,8 +101,35 @@ def makeBundlePdf(point_sets, marker_size,
             flat_e = foldPoints(np.stack([e[0], e[1]]), e)
             flat_edges.append(flat_e)
 
+   
+    if(rosette_positions is None):
+        rosette_pts = []
+        flat_rosette_pts = []
+    elif(np.array(rosette_positions).size <= 3):
+        rosette_pts = [np.array(rosette_positions)]
+        flat_rosette_pts = np.expand_dims(np.array(rosette_positions)[:2], 0).astype(float)
+    else:
+        rosette_pts = []
+        flat_rosette_pts = []
+        for p, e in zip(rosette_positions, edges):
+            if(e is None):
+                unfolded_pts = p
+            else:
+                unfolded_pts = foldPoints(p, e)
+            assert np.all(np.abs(unfolded_pts[:,2]) < 1e-9), 'Unfolded z value nonzero rosette on edge {}'.format(e)
+
+            flat_rosette_pts.extend(unfolded_pts)
+            rosette_pts.extend(p)
+
+            flat_rosette_pts = np.stack(flat_rosette_pts)[:,:2]
+
+
+    if(type(rosette_size) not in [np.ndarray, list]):
+        rosette_size = np.repeat(rosette_size, len(flat_rosette_pts))
+
     if(type(marker_size) not in [np.ndarray, list]):
-        marker_size = np.repeat(marker_size, flat_pts.shape[0])
+        marker_size = np.repeat(marker_size, len(flat_pts))
+
 
     # Find upper left corner of all markers
     min_x = np.min(flat_pts[:,0])
@@ -110,7 +140,12 @@ def makeBundlePdf(point_sets, marker_size,
     flat_pts = flat_pts.copy()
     flat_pts[:,0] -= tl_corner[0]
     flat_pts[:,1] -= tl_corner[1]
-    
+  
+    if(len(flat_rosette_pts) > 0):
+        flat_rosette_pts = flat_rosette_pts.copy()
+        flat_rosette_pts[:,0] -= tl_corner[0]
+        flat_rosette_pts[:,1] -= tl_corner[1]
+
     # If paper size is not defined, set to required size to fit all markers
     if(paper_size is None):
         overlap = 0
@@ -160,7 +195,12 @@ def makeBundlePdf(point_sets, marker_size,
                 e_srt = e[0][:2] - tl_corner - paper_corner
                 e_end = e[1][:2] - tl_corner - paper_corner
                 pdf.dashed_line(e_srt[0], -e_srt[1], e_end[0], -e_end[1])
-            
+ 
+            for idx, (pt2, pt3, sz) in enumerate(zip(flat_rosette_pts, rosette_pts, rosette_size)):
+                if(isOnSheet(pt2, sz, (j,k), printable_size, overlap)):
+                    addOrientedKey(pdf, pt2 - paper_corner,
+                              sz, text_size = text_size, coords = pt3)
+           
             for idx, (pt2, pt3, sz) in enumerate(zip(flat_pts, pts, marker_size)):
                 if(isOnSheet(pt2, sz, (j,k), printable_size, overlap)):
                     addMarker(pdf, start_index + idx, pt2 - paper_corner, 

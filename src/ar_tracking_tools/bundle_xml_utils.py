@@ -84,7 +84,7 @@ def makeBundleXml(point_sets, marker_size, edges = None, start_index = 0):
         num_points += len(unfolded_pts)
 
     if(type(marker_size) not in [np.ndarray, list]):
-        marker_size = np.repeat(marker_size, num_pts)
+        marker_size = np.repeat(marker_size, num_points)
 
     index = 0
     for pts, edge in zip(centers, edges):
