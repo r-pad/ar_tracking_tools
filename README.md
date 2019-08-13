@@ -1,9 +1,9 @@
 # AR Tracking Tools
 A set of tools for tracking artags in ros.
 
-## Tracking a AR Bundle with defualt bundle tracking:
+## Tracking a multiresolution AR Bundle with defualt bundle tracking:
 ```
-rosrun ar_track_alvar findMarkerBundlesNoKinect 5.0 0.2 0.2 /image/topic /info/topic /camera/frame /path/to/bundle.xml
+rosrun ar_tracking_tools findMarkerBundlesNoKinect 5.0 0.2 0.2 /image/topic /info/topic /camera/frame /path/to/bundle.xml
 ```
 
 ## Tracking a AR Bundle with RANSAC:
