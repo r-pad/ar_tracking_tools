@@ -73,6 +73,7 @@ bool init = true;
 
 double marker_size;
 map<int, double> bundle_marker_sizes;
+vector<string> bundle_names;
 
 double max_new_marker_error;
 double max_track_error;
@@ -126,11 +127,7 @@ void publishBundleTransform(int bundle_id, int id, Pose &p, sensor_msgs::ImageCo
   tf::Transform markerPose = t * m;
 
   //Publish the cam to marker transform for main marker in each bundle
-  std::string markerFrame = "bundle_";
-  std::stringstream out;
-  out << bundle_id;
-  std::string id_string = out.str();
-  markerFrame += id_string;
+  std::string markerFrame = bundle_names[bundle_id];
   tf::StampedTransform camToMarker (t, image_msg->header.stamp, image_msg->header.frame_id, markerFrame.c_str());
   tf_broadcaster->sendTransform(camToMarker);
   //Take the pose of the tag in the camera frame and convert to the n frame (usually torso_lift_link for the PR2)
@@ -335,7 +332,10 @@ int main(int argc, char *argv[])
   for(int i=0; i<n_bundles; i++){
     bundlePoses[i].Reset();
     MultiMarker loadHelper;
-    if(loadHelper.Load(argv[i + n_args_before_list], FILE_FORMAT_XML)){
+    string bundle_filename = argv[i + n_args_before_list];
+    if(loadHelper.Load(bundle_filename.c_str(), FILE_FORMAT_XML)){
+      bundle_names.push_back(bundle_filename.substr(bundle_filename.find_last_of("/\\")+1, 
+                                                    bundle_filename.find_last_of(".")));
       vector<int> id_vector = loadHelper.getIndices();
       for(int j=0; j<id_vector.size(); j++)
       {
