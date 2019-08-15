@@ -108,6 +108,7 @@ double marker_size;
 map<int, double> bundle_marker_sizes;
 vector<string> bundle_names;
 
+bool publish_marker_tf;
 double max_new_marker_error;
 double max_track_error;
 std::string cam_image_topic; 
@@ -532,7 +533,10 @@ void publishBundleTransform(int bundle_id, int id, Pose &p, sensor_msgs::ImageCo
   tf::Transform tagPoseOutput = CamToOutput * markerPose;
   //Create the pose marker message
   tf::poseTFToMsg (tagPoseOutput, ar_pose_marker->pose.pose);
-  ar_pose_marker->header.frame_id = output_frame;
+  if(output_frame.size() > 0)
+    ar_pose_marker->header.frame_id = output_frame;
+  else
+    ar_pose_marker->header.frame_id = image_msg->header.frame_id;
   ar_pose_marker->header.stamp = image_msg->header.stamp;
   ar_pose_marker->id = id;
   ar_pose_marker->confidence = confidence;
@@ -540,7 +544,7 @@ void publishBundleTransform(int bundle_id, int id, Pose &p, sensor_msgs::ImageCo
 }
 
 // Given the pose of a marker, builds the appropriate ROS messages for later publishing 
-void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_msg, tf::StampedTransform &CamToOutput, visualization_msgs::Marker *rvizMarker){
+void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_msg, tf::StampedTransform &CamToOutput, visualization_msgs::Marker *rvizMarker, bool publish_tf){
   double px,py,pz,qx,qy,qz,qw;
 
   px = p.translation[0]/100.0;
@@ -605,6 +609,16 @@ void makeMarkerMsgs(int type, int id, Pose &p, sensor_msgs::ImageConstPtr image_
   }
 
   rvizMarker->lifetime = ros::Duration (1.0);
+  if(publish_tf && type == BUNDLE_MARKER)
+  {
+      std::string markerFrame = "ar_marker_";
+      std::stringstream out;
+      out << id;
+      std::string id_string = out.str();
+      markerFrame += id_string;
+      tf::StampedTransform camToMarker (t, image_msg->header.stamp, image_msg->header.frame_id, markerFrame.c_str());
+      tf_broadcaster->sendTransform(camToMarker);
+  }
 }
 
 //Callback to handle getting kinect point clouds and processing them
@@ -618,8 +632,11 @@ void getPointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &msg)
       //Get the transformation from the Camera to the output frame for this image capture
       tf::StampedTransform CamToOutput;
       try{
-	tf_listener->waitForTransform(output_frame, msg->header.frame_id, msg->header.stamp, ros::Duration(1.0));
-	tf_listener->lookupTransform(output_frame, msg->header.frame_id, msg->header.stamp, CamToOutput);
+        if(output_frame.size() > 0) 
+        {
+	        tf_listener->waitForTransform(output_frame, msg->header.frame_id, msg->header.stamp, ros::Duration(1.0));
+	        tf_listener->lookupTransform(output_frame, msg->header.frame_id, msg->header.stamp, CamToOutput);
+        }
       }
       catch (tf::TransformException ex){
 	ROS_ERROR("%s",ex.what());
@@ -668,7 +685,7 @@ void getPointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &msg)
           if(bundle_marker_sizes.find(id)!=bundle_marker_sizes.end())
               type = BUNDLE_MARKER;
 
-	      makeMarkerMsgs(type, id, p, image_msg, CamToOutput, &rvizMarker);
+	      makeMarkerMsgs(type, id, p, image_msg, CamToOutput, &rvizMarker, publish_marker_tf);
 	      rvizMarkerPub_.publish (rvizMarker);
 	    }
 	  }
@@ -786,30 +803,70 @@ int calcAndSaveMasterCoords(MultiMarkerBundle &master)
     return 0;
 }
 
+vector<string> split(const string& str, const string& delim)
+{
+    vector<string> tokens;
+    size_t prev = 0, pos = 0;
+    do
+    {
+        pos = str.find(delim, prev);
+        if (pos == string::npos) pos = str.length();
+        string token = str.substr(prev, pos-prev);
+        if (!token.empty()) tokens.push_back(token);
+        prev = pos + delim.length();
+    }
+    while (pos < str.length() && prev < str.length());
+    return tokens;
+}
 
 int main(int argc, char *argv[])
 {
   ros::init (argc, argv, "marker_detect");
-  ros::NodeHandle n;
+  ros::NodeHandle n, pn("~");
+  vector<string> bundle_filenames;
+  if(argc > 1) {
+      ROS_WARN("Command line arguments are deprecated. Consider using ROS parameters and remappings.");
 
-  if(argc < 9){
-    std::cout << std::endl;
-    cout << "Not enough arguments provided." << endl;
-    cout << "Usage: ./findMarkerBundles <marker size in cm> <max new marker error> <max track error> <cam image topic> <cam info topic> <output frame> <median filt size> <list of bundle XML files...>" << endl;
-    std::cout << std::endl;
-    return 0;
+      if(argc < 9){
+        std::cout << std::endl;
+        cout << "Not enough arguments provided." << endl;
+        cout << "Usage: ./findMarkerBundles <marker size in cm> <max new marker error> <max track error> <cam image topic> <cam info topic> <output frame> <median filt size> <list of bundle XML files...>" << endl;
+        std::cout << std::endl;
+        return 0;
+      }
+
+      // Get params from command line
+      marker_size = atoi(argv[1]);
+      publish_marker_tf = false; 
+      max_new_marker_error = atof(argv[2]);
+      max_track_error = atof(argv[3]);
+      cam_image_topic = argv[4]; 
+      cam_info_topic = argv[5];
+      output_frame = argv[6];
+      med_filt_size = atoi(argv[7]);
+      int n_args_before_list = 8;
+      n_bundles = argc - n_args_before_list;
+      for(int i=0; i<n_bundles; i++){	
+        bundle_filenames.push_back(argv[i + n_args_before_list]);
+      }
+  }
+  else
+  {
+      pn.param("marker_size", marker_size, 5.0);
+      pn.param("publish_marker_tf", publish_marker_tf, false);
+      pn.param("max_new_marker_error", max_new_marker_error, 0.2);
+      pn.param("max_track_error", max_track_error, 0.2);
+      pn.param("med_filt_size", med_filt_size, 10);
+      pn.param<string>("output_frame", output_frame, "");
+      
+      pn.param("cam_image_topic", cam_image_topic);
+      pn.param("cam_info_topic", cam_info_topic);
+      string bundle_filenames_str;
+      pn.param<string>("bundle_filenames", bundle_filenames_str);
+      bundle_filenames = split(bundle_filenames_str, ",");
+      n_bundles = bundle_filenames.size();
   }
 
-  // Get params from command line
-  marker_size = atof(argv[1]);
-  max_new_marker_error = atof(argv[2]);
-  max_track_error = atof(argv[3]);
-  cam_image_topic = argv[4]; 
-  cam_info_topic = argv[5];
-  output_frame = argv[6];
-  med_filt_size = atoi(argv[7]);
-  int n_args_before_list = 8;
-  n_bundles = argc - n_args_before_list;
 
   marker_detector.SetMarkerSize(marker_size);
   multi_marker_bundles = new MultiMarkerBundle*[n_bundles];	
@@ -828,11 +885,11 @@ int main(int argc, char *argv[])
   for(int i=0; i<n_bundles; i++){	
     bundlePoses[i].Reset();		
     MultiMarker loadHelper;
-    string bundle_filename = argv[i + n_args_before_list];
-    if(loadHelper.Load(bundle_filename.c_str(), FILE_FORMAT_XML)){
-      size_t fn_start = bundle_filename.find_last_of("/\\")+1;
-      size_t fn_len = bundle_filename.find_last_of(".") - fn_start;
-      bundle_names.push_back(bundle_filename.substr(fn_start, fn_len));
+    string xml_filename = bundle_filenames[i];
+    if(loadHelper.Load(xml_filename.c_str(), FILE_FORMAT_XML)){
+      size_t fn_start = xml_filename.find_last_of("/\\")+1;
+      size_t fn_len = xml_filename.find_last_of(".") - fn_start;
+      bundle_names.push_back(xml_filename.substr(fn_start, fn_len));
       vector<int> id_vector = loadHelper.getIndices();
       for(int j=0; j<id_vector.size(); j++)
       {
@@ -847,13 +904,13 @@ int main(int argc, char *argv[])
       }
 
       multi_marker_bundles[i] = new MultiMarkerBundle(id_vector);	
-      multi_marker_bundles[i]->Load(argv[i + n_args_before_list], FILE_FORMAT_XML);
+      multi_marker_bundles[i]->Load(xml_filename.c_str(), FILE_FORMAT_XML);
       master_id[i] = multi_marker_bundles[i]->getMasterId();
       bundle_indices[i] = multi_marker_bundles[i]->getIndices();
       calcAndSaveMasterCoords(*(multi_marker_bundles[i]));
     }
     else{
-      cout<<"Cannot load file "<< argv[i + n_args_before_list] << endl;	
+      cout<<"Cannot load file "<< xml_filename << endl;	
       return 0;
     }		
   }  

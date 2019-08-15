@@ -66,12 +66,26 @@ include_directories(include
 #message( "***************************************************************************" )
 #message( ${catkin_LIBRARIES} )
 #message( "***************************************************************************" )
-add_executable(findMarkerBundles nodes/FindMarkerBundles.cpp)
+#add_executable(findMarkerBundles nodes/FindMarkerBundles.cpp)
 # This is definately the wrong way to include medianFilter and kinetic_filtering
-target_link_libraries(findMarkerBundles ${catkin_LIBRARIES} /opt/ros/kinetic/lib/libmedianFilter.so /opt/ros/kinetic/lib/libkinect_filtering.so )
-add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+#target_link_libraries(findMarkerBundles ${catkin_LIBRARIES} /opt/ros/kinetic/lib/libmedianFilter.so /opt/ros/kinetic/lib/libkinect_filtering.so )
+#add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 add_executable(findMarkerBundlesNoKinect nodes/FindMarkerBundlesNoKinect.cpp)
 target_link_libraries(findMarkerBundlesNoKinect ${catkin_LIBRARIES})
 add_dependencies(findMarkerBundlesNoKinect ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
+add_executable(alvarBundleTracker nodes/alvar_bundle_tracker_node.cpp src_cpp/alvar_bundle_tracker.cpp)
+target_link_libraries(alvarBundleTracker ${catkin_LIBRARIES})
+add_dependencies(alvarBundleTracker ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+
+
+install(TARGETS
+    findMarkerBundlesNoKinect
+    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+install(DIRECTORY launch/
+    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
+)
