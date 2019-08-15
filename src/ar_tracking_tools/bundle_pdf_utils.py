@@ -66,6 +66,7 @@ def makeBundlePdf(point_sets, marker_size,
                   edges = None, 
                   start_index = 0,
                   paper_size = None, 
+                  paper_orientation = 'P',
                   text_size = None, 
                   margin = 1., 
                   overlap = 2.,
@@ -158,7 +159,7 @@ def makeBundlePdf(point_sets, marker_size,
     overlap_norm = overlap / (printable_size - overlap)
     num_sheets = np.ceil(np.max(sheet_coords, axis=0) - overlap_norm).astype(int)
 
-    pdf = FPDF(orientation = 'P', unit = 'cm', format=paper_size)
+    pdf = FPDF(orientation = paper_orientation, unit = 'cm', format=paper_size)
     if(text_size is not None):
         pdf.set_font('Courier', '', text_size*CM2PT)
         
