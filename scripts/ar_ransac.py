@@ -55,12 +55,13 @@ class ARTagRANSAC(object):
             corres = open3d.Vector2iVector(np.tile(np.arange(len(marker_pts)),[2,1]).T)
             ransac_res = open3d.registration_ransac_based_on_correspondence(pts_src, pts_tgt, corres, self.max_corres_dist)
             trans_ransac = ransac_res.transformation
+            trans_ransac = np.linalg.inv(trans_ransac)
 
             self.tf_broadcaster.sendTransform(trans_ransac[:3,3],
                                               tf.transformations.quaternion_from_matrix(trans_ransac),
                                               marker.header.stamp,
-                                              marker.header.frame_id,
                                               self.frame_id,
+                                              marker.header.frame_id,
                                               )
 def main():
     rospy.init_node("ar_tag_ransac") 

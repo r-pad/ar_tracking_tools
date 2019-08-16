@@ -63,13 +63,10 @@ include_directories(include
                     ${TinyXML_INCLUDE_DIRS}
                     )
 
-#message( "***************************************************************************" )
-#message( ${catkin_LIBRARIES} )
-#message( "***************************************************************************" )
-#add_executable(findMarkerBundles nodes/FindMarkerBundles.cpp)
+add_executable(findMarkerBundles nodes/FindMarkerBundles.cpp)
 # This is definately the wrong way to include medianFilter and kinetic_filtering
-#target_link_libraries(findMarkerBundles ${catkin_LIBRARIES} /opt/ros/kinetic/lib/libmedianFilter.so /opt/ros/kinetic/lib/libkinect_filtering.so )
-#add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+target_link_libraries(findMarkerBundles ${catkin_LIBRARIES} ${CMAKE_INSTALL_PREFIX}/${CATKIN_PACKAGE_LIB_DESTINATION}/libmedianFilter.so ${CMAKE_INSTALL_PREFIX}/${CATKIN_PACKAGE_LIB_DESTINATION}/libkinect_filtering.so )
+add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 add_executable(findMarkerBundlesNoKinect nodes/FindMarkerBundlesNoKinect.cpp)
 target_link_libraries(findMarkerBundlesNoKinect ${catkin_LIBRARIES})
@@ -81,11 +78,15 @@ add_dependencies(alvarBundleTracker ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 
 install(TARGETS
+    findMarkerBundles
     findMarkerBundlesNoKinect
     ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
     RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-install(DIRECTORY launch/
+install(DIRECTORY 
+    launch/
     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
 )
+
+catkin_install_python(PROGRAMS scripts/ar_ransac.py DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION})

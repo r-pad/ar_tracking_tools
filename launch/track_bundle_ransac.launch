@@ -12,18 +12,34 @@
 	<arg name="max_new_marker_error" default="0.2" />
 	<arg name="max_track_error" default="0.2" />
 
-	<arg name="use_corners" default="true" />
+	<arg name="use_corners" default="false" />
+    <arg name="use_depth" default="true" />
 
-    <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkersNoKinect" respawn="false" output="screen">
-        <param name="marker_size" type="double" value="$(arg marker_size)" />
-        <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
-        <param name="max_track_error" type="double" value="$(arg max_track_error)" />
-        <param name="output_frame" type="string" value="$(arg output_frame)" />
+    <group unless="$(arg use_depth)">
+        <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkersNoKinect" respawn="false" output="screen">
+            <param name="marker_size" type="double" value="$(arg marker_size)" />
+            <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
+            <param name="max_track_error" type="double" value="$(arg max_track_error)" />
+            <param name="output_frame" type="string" value="$(arg output_frame)" />
 
-        <remap from="camera_image" to="$(arg image_topic)" />
-        <remap from="camera_info" to="$(arg info_topic)" />
-        <remap from="/ar_pose_marker" to="$(arg ar_topic)" />
-    </node>
+            <remap from="camera_image" to="$(arg image_topic)" />
+            <remap from="camera_info" to="$(arg info_topic)" />
+            <remap from="/ar_pose_marker" to="$(arg ar_topic)" />
+        </node>
+    </group>
+    <group if="$(arg use_depth)">
+        <node name="ar_track_alvar" pkg="ar_track_alvar" type="individualMarkers" respawn="false" output="screen">
+            <param name="marker_size" type="double" value="$(arg marker_size)" />
+            <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
+            <param name="max_track_error" type="double" value="$(arg max_track_error)" />
+            <param name="output_frame" type="string" value="$(arg output_frame)" />
+
+            <remap from="camera_image" to="$(arg image_topic)" />
+            <remap from="camera_info" to="$(arg info_topic)" />
+            <remap from="/ar_pose_marker" to="$(arg ar_topic)" />
+        </node>
+    </group>
+
 
     <node name="ar_ransac" pkg="ar_tracking_tools" type="ar_ransac.py" respawn="false" output="screen">
         <param name="bundle_file" type="string" value="$(arg bundle_file)" />
