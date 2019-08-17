@@ -47,6 +47,14 @@ typedef pcl::PointCloud<ARPoint> ARCloud;
 tf::Transform 
 poseToTF(Pose &p);
 
+int 
+makeMasterTransform (const CvPoint3D64f& p0, const CvPoint3D64f& p1,
+                     const CvPoint3D64f& p2, const CvPoint3D64f& p3,
+                     tf::Transform &retT);
+
+int 
+calcAndSaveMasterCoords(MultiMarkerBundle &master);
+
 int
 planeFitPoseImprovement(const ARCloud &corners_3D, 
                         ARCloud::Ptr selected_points, 

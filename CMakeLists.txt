@@ -67,24 +67,16 @@ include_directories(include
                     ${TinyXML_INCLUDE_DIRS}
                     )
 
-message("################################################################")
-message("${CMAKE_INSTALL_PREFIX}")
-message("${CATKIN_PACKAGE_LIB_DESTINATION}")
-message("${CATKIN_GLOBAL_LIB_DESTINATION}")
-message("${CATKIN_GLOBAL_BIN_DESTINATION}")
-message("${CMAKE_PREFIX_PATH}")
-message("################################################################")
-
 add_executable(findMarkerBundles nodes/FindMarkerBundles.cpp)
 # This is definately the wrong way to include medianFilter and kinetic_filtering
 target_link_libraries(findMarkerBundles ${catkin_LIBRARIES} 
     ${CMAKE_PREFIX_PATH}/${CATKIN_PACKAGE_LIB_DESTINATION}/libmedianFilter.so
     ${CMAKE_PREFIX_PATH}/${CATKIN_PACKAGE_LIB_DESTINATION}/libkinect_filtering.so )
-#add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+add_dependencies(findMarkerBundles ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 add_executable(findMarkerBundlesNoKinect nodes/FindMarkerBundlesNoKinect.cpp)
 target_link_libraries(findMarkerBundlesNoKinect ${catkin_LIBRARIES})
-#add_dependencies(findMarkerBundlesNoKinect ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+add_dependencies(findMarkerBundlesNoKinect ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 add_executable(alvarBundleTracker nodes/alvar_bundle_tracker_node.cpp 
     src_cpp/alvar_bundle_tracker.cpp 
@@ -92,10 +84,11 @@ add_executable(alvarBundleTracker nodes/alvar_bundle_tracker_node.cpp
 target_link_libraries(alvarBundleTracker ${catkin_LIBRARIES}
     ${CMAKE_PREFIX_PATH}/${CATKIN_PACKAGE_LIB_DESTINATION}/libmedianFilter.so
     ${CMAKE_PREFIX_PATH}/${CATKIN_PACKAGE_LIB_DESTINATION}/libkinect_filtering.so )
-#add_dependencies(alvarBundleTracker ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
+add_dependencies(alvarBundleTracker ${PROJECT_NAME}_gencpp ${GENCPP_DEPS})
 
 
 install(TARGETS
+    alvarBundleTracker
     findMarkerBundles
     findMarkerBundlesNoKinect
     ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}

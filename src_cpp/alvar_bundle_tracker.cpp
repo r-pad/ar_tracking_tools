@@ -195,6 +195,95 @@ makeAlvarMarkerMsg(int id,
 }
 
 int 
+makeMasterTransform (const CvPoint3D64f& p0, const CvPoint3D64f& p1,
+                     const CvPoint3D64f& p2, const CvPoint3D64f& p3,
+                     tf::Transform &retT)
+{
+    const tf::Vector3 q0(p0.x, p0.y, p0.z);
+    const tf::Vector3 q1(p1.x, p1.y, p1.z);
+    const tf::Vector3 q2(p2.x, p2.y, p2.z);
+    const tf::Vector3 q3(p3.x, p3.y, p3.z);
+  
+    // (inverse) matrix with the given properties
+    const tf::Vector3 v = (q1-q0).normalized();
+    const tf::Vector3 w = (q2-q1).normalized();
+    const tf::Vector3 n = v.cross(w);
+    tf::Matrix3x3 m(v[0], v[1], v[2], w[0], w[1], w[2], n[0], n[1], n[2]);
+    m = m.inverse();
+    
+    //Translate to quaternion
+    if(m.determinant() <= 0)
+        return -1;
+  
+    //Use Eigen for this part instead, because the ROS version of bullet appears to have a bug
+    Eigen::Matrix3f eig_m;
+    for(int i=0; i<3; i++){
+        for(int j=0; j<3; j++){
+            eig_m(i,j) = m[i][j];
+        }
+    }
+    Eigen::Quaternion<float> eig_quat(eig_m);
+    
+    // Translate back to bullet
+    tfScalar ex = eig_quat.x();
+    tfScalar ey = eig_quat.y();
+    tfScalar ez = eig_quat.z();
+    tfScalar ew = eig_quat.w();
+    tf::Quaternion quat(ex,ey,ez,ew);
+    quat = quat.normalized();
+    
+    double qx = (q0.x() + q1.x() + q2.x() + q3.x()) / 4.0;
+    double qy = (q0.y() + q1.y() + q2.y() + q3.y()) / 4.0;
+    double qz = (q0.z() + q1.z() + q2.z() + q3.z()) / 4.0;
+    tf::Vector3 origin (qx,qy,qz);
+    
+    tf::Transform tform (quat, origin);  //transform from master to marker
+    retT = tform;
+    
+    return 0;
+}
+
+int 
+calcAndSaveMasterCoords(MultiMarkerBundle &master)
+{
+    int mast_id = master.master_id;
+    std::vector<tf::Vector3> rel_corner_coords;
+    
+    //Go through all the markers associated with this bundle
+    for (size_t i=0; i<master.marker_indices.size(); i++){
+        int mark_id = master.marker_indices[i];
+        rel_corner_coords.clear();
+        
+        //Get the coords of the corners of the child marker in the master frame
+        CvPoint3D64f mark_corners[4];
+        for(int j=0; j<4; j++){
+            mark_corners[j] = master.pointcloud[master.pointcloud_index(mark_id, j)];
+        }
+        
+        //Use them to find a transform from the master frame to the child frame
+        tf::Transform tform;
+        makeMasterTransform(mark_corners[0], mark_corners[1], mark_corners[2], mark_corners[3], tform);
+    
+        //Finally, find the coords of the corners of the master in the child frame
+        for(int j=0; j<4; j++){
+            
+            CvPoint3D64f corner_coord = master.pointcloud[master.pointcloud_index(mast_id, j)];
+            double px = corner_coord.x;
+            double py = corner_coord.y;
+            double pz = corner_coord.z;
+        
+            tf::Vector3 corner_vec (px, py, pz);
+            tf::Vector3 ans = (tform.inverse()) * corner_vec;
+            rel_corner_coords.push_back(ans);
+        }
+        
+        master.rel_corners.push_back(rel_corner_coords);
+    }
+    
+    return 0;
+}
+
+int 
 AlvarBundleTracker::inferCorners(const ARCloud &cloud, MultiMarkerBundle &master, ARCloud &bund_corners)
 {
     bund_corners.clear();
@@ -236,7 +325,7 @@ AlvarBundleTracker::inferCorners(const ARCloud &cloud, MultiMarkerBundle &master
             mark_out << id;
             std::string id_string = mark_out.str();
             marker_frame += id_string;
-
+             
             for(int j = 0; j < 4; ++j)
             {
                 tf::Vector3 corner_coord = master.rel_corners[index][j];
@@ -245,7 +334,7 @@ AlvarBundleTracker::inferCorners(const ARCloud &cloud, MultiMarkerBundle &master
                 p.point.x = corner_coord.y()/100.0;  
                 p.point.y = -corner_coord.x()/100.0;
                 p.point.z = corner_coord.z()/100.0;
-
+                
                 try
                 {
                     tf_listener_ptr_->waitForTransform(cloud.header.frame_id, marker_frame, ros::Time(0), ros::Duration(0.1));
@@ -301,6 +390,15 @@ AlvarBundleTracker::getMultiMarkerPoses(IplImage *image)
                     multi_marker_bundles_[i]->Update(marker_detector_.markers, 
                                                      camera_ptr_.get(), bundle_poses_[i]);
                 }
+				
+				Pose ret_pose;
+                if(median_filt_size_ > 0)
+                {
+                    median_filts_[i]->addPose(bundle_poses_[i]);
+                    median_filts_[i]->getMedian(ret_pose);
+                    bundle_poses_[i] = ret_pose;
+                }
+
             }
         }
     }
@@ -365,19 +463,18 @@ AlvarBundleTracker::getMultiMarkerPoses(IplImage *image, ARCloud &cloud)
             }
             ARCloud::Ptr selected_points = ar_track_alvar::filterCloud(cloud, pixels);
 
-
             if(planeFitPoseImprovement(m->ros_corners_3D, selected_points, cloud, m->pose) < 0)
             {
                 m->valid = false;
             }
-            else
+            else if(bundle_id >= 0)
             {
                 m->valid = true;
                 bundles_seen[bundle_id] = true;
             }     
                 
         }
-        
+            
         ARCloud inferred_corners;
         for(int i=0; i<num_bundles_; i++)
         {
@@ -545,6 +642,10 @@ AlvarBundleTracker::pointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &
                 tf_listener_ptr_->lookupTransform(output_frame_, cloud_msg->header.frame_id, 
                                                   cloud_msg->header.stamp, cam_to_output);
             }
+            else
+            {
+                cam_to_output.setData(tf::Transform::getIdentity());
+            }
         }
         catch (tf::TransformException ex)
         {
@@ -572,7 +673,7 @@ AlvarBundleTracker::pointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &
             ROS_ERROR ("Could not convert from '%s' to 'rgb8'.", image_msg->encoding.c_str ());
             return;
         }
-
+        
         IplImage ipl_image = img_ptr->image;
         getMultiMarkerPoses(&ipl_image, cloud);
         
@@ -634,7 +735,8 @@ AlvarBundleTracker::pointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &
                 }
             }
         }
-        for(size_t i=0; i<num_bundles_; i++)
+        
+		for(size_t i=0; i<num_bundles_; i++)
         {
             if(bundles_seen[i])
             {
@@ -767,6 +869,10 @@ AlvarBundleTracker::AlvarBundleTracker(ros::NodeHandle nh,
             multi_marker_bundles_[i]->Load(xml_filename.c_str(), FILE_FORMAT_XML);
             master_ids_[i] = multi_marker_bundles_[i]->getMasterId();
             bundle_indices_[i] = multi_marker_bundles_[i]->getIndices();
+            if(use_depth)
+            {
+                calcAndSaveMasterCoords(*(multi_marker_bundles_[i]));
+            }
         }
         else
         {
@@ -782,20 +888,21 @@ AlvarBundleTracker::AlvarBundleTracker(ros::NodeHandle nh,
     
     ar_marker_pub_ = nh.advertise < ar_track_alvar_msgs::AlvarMarkers > ("ar_pose_marker", 0);
     rviz_marker_pub_ = nh.advertise < visualization_msgs::MarkerArray > ("visualization_marker_array", 0);
+	
+	if(median_filt_size_ > 0)
+	{
+		median_filts_.resize(num_bundles_);
+		for(int i=0; i<num_bundles_; i++)
+		{
+			median_filts_[i] = boost::shared_ptr<ar_track_alvar::MedianFilter>(new ar_track_alvar::MedianFilter(median_filt_size_));
+		}
+	}   
     
-    if(use_depth)
+	if(use_depth)
     {
         publish_marker_tf_ = true;
         cloud_sub_ = nh.subscribe("in_cloud", 1, &AlvarBundleTracker::pointCloudCallback, this);
-        
-        if(median_filt_size_ > 0)
-        {
-            median_filts_.resize(num_bundles_);
-            for(int i=0; i<num_bundles_; i++)
-            {
-                median_filts_[i] = boost::shared_ptr<ar_track_alvar::MedianFilter>(new ar_track_alvar::MedianFilter(median_filt_size_));
-            }
-        }
+
     }
     else
     {
