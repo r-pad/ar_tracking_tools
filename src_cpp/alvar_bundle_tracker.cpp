@@ -1,5 +1,8 @@
 #include <ar_tracking_tools/alvar_bundle_tracker.h>
+#include <tf_conversions/tf_eigen.h>
 #include <stdexcept>
+#include "ar_tracking_tools/colors.h"
+#include <boost/algorithm/string/trim.hpp>
 
 tf::Transform
 poseToTF(Pose &p)
@@ -52,9 +55,10 @@ makeRvizMarkerMsg(int bundle_id, int id, double marker_size,
 
     if(bundle_id >= 0)
     {
-        rviz_marker.color.r = 1.0f;
-        rviz_marker.color.g = 0.0f;
-        rviz_marker.color.b = 0.0f;
+        Color color = getColor(bundle_id);
+        rviz_marker.color.r = color.r/255.0;
+        rviz_marker.color.g = color.g/255.0;
+        rviz_marker.color.b = color.b/255.0;
         rviz_marker.color.a = 1.0;
     }
     else
@@ -69,6 +73,100 @@ makeRvizMarkerMsg(int bundle_id, int id, double marker_size,
     return rviz_marker;
 }
 
+int
+planeFitPoseImprovement(const ARCloud &corners_3D, 
+                        ARCloud::Ptr selected_points, 
+                        const ARCloud &cloud, 
+                        Pose &p)
+{
+    ar_track_alvar::PlaneFitResult res = ar_track_alvar::fitPlane(selected_points);
+    geometry_msgs::PoseStamped pose;
+    pose.header.stamp = pcl_conversions::fromPCL(cloud.header).stamp;
+    pose.header.frame_id = cloud.header.frame_id;
+    pose.pose.position = ar_track_alvar::centroid(*res.inliers);
+
+    //draw3dPoints(selected_points, cloud.header.frame_id, 1, id, 0.005);
+
+    //Get 2 points that point forward in marker x direction   
+    int i1,i2;
+    if(isnan(corners_3D[0].x) || isnan(corners_3D[0].y) || isnan(corners_3D[0].z) || 
+       isnan(corners_3D[3].x) || isnan(corners_3D[3].y) || isnan(corners_3D[3].z))
+    {
+        if(isnan(corners_3D[1].x) || isnan(corners_3D[1].y) || isnan(corners_3D[1].z) || 
+           isnan(corners_3D[2].x) || isnan(corners_3D[2].y) || isnan(corners_3D[2].z))
+        {
+            return -1;
+        }
+        else
+        {
+            i1 = 1;
+            i2 = 2;
+        }
+    }
+    else
+    {
+        i1 = 0;
+        i2 = 3;
+    }
+
+    //Get 2 points the point forward in marker y direction   
+    int i3,i4;
+    if(isnan(corners_3D[0].x) || isnan(corners_3D[0].y) || isnan(corners_3D[0].z) || 
+       isnan(corners_3D[1].x) || isnan(corners_3D[1].y) || isnan(corners_3D[1].z))
+    {   
+        if(isnan(corners_3D[3].x) || isnan(corners_3D[3].y) || isnan(corners_3D[3].z) || 
+           isnan(corners_3D[2].x) || isnan(corners_3D[2].y) || isnan(corners_3D[2].z))
+        {   
+            return -1;
+        }
+        else
+        {
+            i3 = 2;
+            i4 = 3;
+        }
+    }
+    else
+    {
+        i3 = 1;
+        i4 = 0;
+    }
+
+    ARCloud::Ptr orient_points(new ARCloud());
+    orient_points->points.push_back(corners_3D[i1]);
+    //draw3dPoints(orient_points, cloud.header.frame_id, 3, id+1000, 0.008);
+
+    orient_points->clear();
+    orient_points->points.push_back(corners_3D[i2]);
+    //draw3dPoints(orient_points, cloud.header.frame_id, 2, id+2000, 0.008);
+
+    int succ;
+    succ = ar_track_alvar::extractOrientation(res.coeffs, corners_3D[i1], corners_3D[i2], 
+                                              corners_3D[i3], corners_3D[i4], pose.pose.orientation);
+    if(succ < 0) 
+    {
+        return -1;
+    }
+
+    tf::Matrix3x3 mat;
+    succ = ar_track_alvar::extractFrame(res.coeffs, corners_3D[i1], corners_3D[i2], 
+                                        corners_3D[i3], corners_3D[i4], mat);
+    if(succ < 0) 
+    {
+        return -1;
+    }
+
+    //drawArrow(pose.pose.position, mat, cloud.header.frame_id, 1, id);
+
+    p.translation[0] = pose.pose.position.x * 100.0;
+    p.translation[1] = pose.pose.position.y * 100.0;
+    p.translation[2] = pose.pose.position.z * 100.0;
+    p.quaternion[1] = pose.pose.orientation.x;
+    p.quaternion[2] = pose.pose.orientation.y;
+    p.quaternion[3] = pose.pose.orientation.z;
+    p.quaternion[0] = pose.pose.orientation.w; 
+
+    return 0;
+}
 
 ar_track_alvar_msgs::AlvarMarker 
 makeAlvarMarkerMsg(int id, 
@@ -94,6 +192,90 @@ makeAlvarMarkerMsg(int id,
     ar_pose_marker.id = id;
     
     return ar_pose_marker;
+}
+
+int 
+AlvarBundleTracker::inferCorners(const ARCloud &cloud, MultiMarkerBundle &master, ARCloud &bund_corners)
+{
+    bund_corners.clear();
+    bund_corners.resize(4);
+    for(int i=0; i<4; i++)
+    {
+        bund_corners[i].x = 0;
+        bund_corners[i].y = 0;
+        bund_corners[i].z = 0;
+    }
+
+    for (size_t i=0; i<master.marker_status.size(); i++) 
+    {
+        if (master.marker_status[i] > 0)
+        {
+            master.marker_status[i]=1;
+        }
+    }
+
+    int n_est = 0;
+
+    for (size_t i=0; i<marker_detector_.markers->size(); i++)
+    {
+        const Marker* marker = &((*marker_detector_.markers)[i]);
+        int id = marker->GetId();
+        int index = master.get_id_index(id);
+        int mast_id = master.master_id;
+        if (index < 0) 
+        {
+          continue;
+        }
+
+        if (master.marker_status[index] > 0 && marker->valid)
+        {
+            n_est++;
+
+            std::string marker_frame = "ar_marker_";
+            std::stringstream mark_out;
+            mark_out << id;
+            std::string id_string = mark_out.str();
+            marker_frame += id_string;
+
+            for(int j = 0; j < 4; ++j)
+            {
+                tf::Vector3 corner_coord = master.rel_corners[index][j];
+                geometry_msgs::PointStamped p, output_p;
+                p.header.frame_id = marker_frame;
+                p.point.x = corner_coord.y()/100.0;  
+                p.point.y = -corner_coord.x()/100.0;
+                p.point.z = corner_coord.z()/100.0;
+
+                try
+                {
+                    tf_listener_ptr_->waitForTransform(cloud.header.frame_id, marker_frame, ros::Time(0), ros::Duration(0.1));
+                    tf_listener_ptr_->transformPoint(cloud.header.frame_id, p, output_p);
+                }
+                catch (tf::TransformException ex)
+                {
+                    ROS_ERROR("ERROR InferCorners: %s",ex.what());
+                    return -1;
+                }
+
+                bund_corners[j].x += output_p.point.x;
+                bund_corners[j].y += output_p.point.y;
+                bund_corners[j].z += output_p.point.z;
+            }
+            master.marker_status[index] = 2;
+        }
+    }
+  
+    if(n_est > 0)
+    {
+        for(int i=0; i<4; i++)
+        {
+            bund_corners[i].x /= n_est;
+            bund_corners[i].y /= n_est;
+            bund_corners[i].z /= n_est;
+        }
+    }
+
+    return 0;
 }
 
 void 
@@ -125,11 +307,105 @@ AlvarBundleTracker::getMultiMarkerPoses(IplImage *image)
 }
 
 void 
+AlvarBundleTracker::getMultiMarkerPoses(IplImage *image, ARCloud &cloud)
+{
+    if(marker_detector_.Detect(image, camera_ptr_.get(), true, false, 
+                               max_new_marker_error_, 
+                               max_track_error_, CVSEQ, true)) 
+    {
+        vector<bool> bundles_seen(num_bundles_, false);
+
+        for (size_t i=0; i<marker_detector_.markers->size(); i++)
+        {
+            vector<cv::Point, Eigen::aligned_allocator<cv::Point> > pixels;
+            Marker *m = &((*marker_detector_.markers)[i]);
+            int id = m->GetId();
+            int resol = m->GetRes();
+            int ori = m->ros_orientation;
+      
+            PointDouble pt1, pt2, pt3, pt4;
+            pt4 = m->ros_marker_points_img[0];
+            pt3 = m->ros_marker_points_img[resol-1];
+            pt1 = m->ros_marker_points_img[(resol*resol)-resol];
+            pt2 = m->ros_marker_points_img[(resol*resol)-1];
+
+            m->ros_corners_3D[0] = cloud(pt1.x, pt1.y);
+            m->ros_corners_3D[1] = cloud(pt2.x, pt2.y);
+            m->ros_corners_3D[2] = cloud(pt3.x, pt3.y);
+            m->ros_corners_3D[3] = cloud(pt4.x, pt4.y);
+
+            if(ori >= 0 && ori < 4)
+            {
+                if(ori != 0){
+                  std::rotate(m->ros_corners_3D.begin(), m->ros_corners_3D.begin() + ori, m->ros_corners_3D.end());
+                }
+            }
+            else
+            {
+                ROS_ERROR("FindMarkerBundles: Bad Orientation: %i for ID: %i", ori, id);
+            }
+
+
+            int bundle_id = -1;
+            for(int j=0; j<num_bundles_; j++)
+            {
+                for(int k=0; k<bundle_indices_[j].size(); k++)
+                {
+                    if(bundle_indices_[j][k] == id)
+                    {
+                        bundle_id = j;
+                        break;
+                    }
+                }
+            }
+
+            BOOST_FOREACH (const PointDouble& p, m->ros_marker_points_img)
+            {
+                pixels.push_back(cv::Point(p.x, p.y));
+            }
+            ARCloud::Ptr selected_points = ar_track_alvar::filterCloud(cloud, pixels);
+
+
+            if(planeFitPoseImprovement(m->ros_corners_3D, selected_points, cloud, m->pose) < 0)
+            {
+                m->valid = false;
+            }
+            else
+            {
+                m->valid = true;
+                bundles_seen[bundle_id] = true;
+            }     
+                
+        }
+        
+        ARCloud inferred_corners;
+        for(int i=0; i<num_bundles_; i++)
+        {
+            if(bundles_seen[i])
+            {
+                if(inferCorners(cloud, *(multi_marker_bundles_[i]), inferred_corners) >= 0)
+                {
+                    ARCloud::Ptr inferred_cloud(new ARCloud(inferred_corners));
+                    planeFitPoseImprovement(inferred_corners, inferred_cloud, cloud, bundle_poses_[i]);
+                }
+
+                Pose ret_pose;
+                if(median_filt_size_ > 0)
+                {
+                    median_filts_[i]->addPose(bundle_poses_[i]);
+                    median_filts_[i]->getMedian(ret_pose);
+                    bundle_poses_[i] = ret_pose;
+                }
+            }
+        }
+    }
+}
+
+void 
 AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
 {    
     if(camera_ptr_->getCamInfo_)
     {
-        
         tf::StampedTransform cam_to_output;
         try
         {
@@ -139,6 +415,10 @@ AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
                                                    image_msg->header.stamp, ros::Duration(1.0));
                 tf_listener_ptr_->lookupTransform(output_frame_, image_msg->header.frame_id, 
                                                   image_msg->header.stamp, cam_to_output);
+            }
+            else
+            {
+                cam_to_output.setData(tf::Transform::getIdentity());
             }
         }
         catch (tf::TransformException ex)
@@ -158,20 +438,21 @@ AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
         }
 
         ar_track_alvar_msgs::AlvarMarkers ar_pose_markers;
+        visualization_msgs::MarkerArray rviz_pose_markers;
 
         IplImage ipl_image = img_ptr->image;
         getMultiMarkerPoses(&ipl_image);
 
         vector<bool> bundles_seen(num_bundles_, false);
-
+        std::map<int, Eigen::Matrix4f> tag_transforms;
+        
         for (size_t i=0; i<marker_detector_.markers->size(); i++)
         {
             int id = (*(marker_detector_.markers))[i].GetId();
             
-            int bundle_id = -1;
-            
             if(id >= 0)
             {
+                int bundle_id = -1;
                 for(int j=0; j<num_bundles_; j++)
                 {
                     for(size_t k=0; k<bundle_indices_[j].size(); k++)
@@ -196,8 +477,14 @@ AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
                 tf::Transform marker_pose = poseToTF(p);
                 visualization_msgs::Marker rviz_marker = 
                     makeRvizMarkerMsg(bundle_id, id, marker_size, marker_pose, image_msg);
-                rviz_marker_pub_.publish(rviz_marker);
-                
+                rviz_pose_markers.markers.push_back(rviz_marker);
+                //rviz_marker_pub_.publish(rviz_marker);
+                if(use_ransac_)
+                {
+                    Eigen::Affine3d marker_affine;
+                    tf::transformTFToEigen(marker_pose, marker_affine);
+                    tag_transforms.insert(pair<int, Eigen::Matrix4f>(id, marker_affine.cast<float>().matrix()));
+                }
                 if(bundle_id >= 0 && publish_marker_tf_)
                 {
                     std::string marker_frame = "ar_marker_" + to_string(id);
@@ -219,6 +506,150 @@ AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
             {
                 ar_track_alvar_msgs::AlvarMarker bundle_pose_marker;
                 tf::Transform bundle_pose = poseToTF(bundle_poses_[i]);
+                if(use_ransac_)
+                {
+                    Eigen::Affine3f refined_transform;
+                    if(bundle_refiners_[i].refine(tag_transforms, refined_transform.matrix()))
+                    {
+                        tf:poseEigenToTF(refined_transform.cast<double>(), bundle_pose);
+                    }
+                }
+                
+                tf::StampedTransform cam_to_bundle(bundle_pose, 
+                                                   image_msg->header.stamp, 
+                                                   image_msg->header.frame_id, 
+                                                   bundle_names_[i].c_str());
+                tf_broadcaster_ptr_->sendTransform(cam_to_bundle);
+                ar_track_alvar_msgs::AlvarMarker bundle_marker_msg = makeAlvarMarkerMsg(-i-1, bundle_pose, image_msg, cam_to_output);
+                ar_pose_markers.markers.push_back(bundle_marker_msg);
+            }
+        }
+
+        ar_marker_pub_.publish (ar_pose_markers);
+        rviz_marker_pub_.publish(rviz_pose_markers);
+    }
+}
+
+void 
+AlvarBundleTracker::pointCloudCallback (const sensor_msgs::PointCloud2ConstPtr &cloud_msg)
+{
+    if(camera_ptr_->getCamInfo_)
+    {
+        tf::StampedTransform cam_to_output;
+        try
+        {
+            if(output_frame_.size() > 0)
+            {
+                tf_listener_ptr_->waitForTransform(output_frame_, cloud_msg->header.frame_id, 
+                                                   cloud_msg->header.stamp, ros::Duration(1.0));
+                tf_listener_ptr_->lookupTransform(output_frame_, cloud_msg->header.frame_id, 
+                                                  cloud_msg->header.stamp, cam_to_output);
+            }
+        }
+        catch (tf::TransformException ex)
+        {
+            ROS_ERROR("%s",ex.what());
+        }
+
+        ar_track_alvar_msgs::AlvarMarkers ar_pose_markers;
+        visualization_msgs::MarkerArray rviz_pose_markers;
+
+        ARCloud cloud;
+        pcl::fromROSMsg(*cloud_msg, cloud);
+
+        sensor_msgs::ImagePtr image_msg(new sensor_msgs::Image);
+        pcl::toROSMsg (*cloud_msg, *image_msg);
+        image_msg->header.stamp = cloud_msg->header.stamp;
+        image_msg->header.frame_id = cloud_msg->header.frame_id;
+            
+        cv_bridge::CvImagePtr img_ptr;
+        try
+        {
+            img_ptr = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8);
+        }
+        catch (cv_bridge::Exception& e)
+        {
+            ROS_ERROR ("Could not convert from '%s' to 'rgb8'.", image_msg->encoding.c_str ());
+            return;
+        }
+
+        IplImage ipl_image = img_ptr->image;
+        getMultiMarkerPoses(&ipl_image, cloud);
+        
+        vector<bool> bundles_seen(num_bundles_, false);
+        std::map<int, Eigen::Matrix4f> tag_transforms;
+        
+        for (size_t i=0; i<marker_detector_.markers->size(); i++)
+        {
+            int id = (*(marker_detector_.markers))[i].GetId();
+            
+            if(id >= 0)
+            {
+                int bundle_id = -1;
+                for(int j=0; j<num_bundles_; j++)
+                {
+                    for(size_t k=0; k<bundle_indices_[j].size(); k++)
+                    {
+                        if(bundle_indices_[j][k] == id)
+                        {
+                            bundle_id = j;
+                            bundles_seen[j] = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if((*(marker_detector_.markers))[i].valid)
+                {
+                    Pose p = (*(marker_detector_.markers))[i].pose;
+                    double marker_size = default_marker_size_;
+                    if(bundle_marker_sizes_.find(id)!=bundle_marker_sizes_.end())
+                    {
+                        marker_size = bundle_marker_sizes_[id];
+                    }
+
+                    tf::Transform marker_pose = poseToTF(p);
+                    visualization_msgs::Marker rviz_marker = 
+                        makeRvizMarkerMsg(bundle_id, id, marker_size, marker_pose, image_msg);
+                    rviz_pose_markers.markers.push_back(rviz_marker);
+                    //rviz_marker_pub_.publish(rviz_marker);
+                    if(use_ransac_)
+                    {
+                        Eigen::Affine3d marker_affine;
+                        tf::transformTFToEigen(marker_pose, marker_affine);
+                        tag_transforms.insert(pair<int, Eigen::Matrix4f>(id, marker_affine.cast<float>().matrix()));
+                    }
+                    if(bundle_id >= 0 && publish_marker_tf_)
+                    {
+                        std::string marker_frame = "ar_marker_" + to_string(id);
+                        tf::StampedTransform cam_to_marker(marker_pose, image_msg->header.stamp, 
+                                                           image_msg->header.frame_id, marker_frame.c_str());
+
+                        tf_broadcaster_ptr_->sendTransform(cam_to_marker);
+                        ar_track_alvar_msgs::AlvarMarker tag_marker_msg = makeAlvarMarkerMsg(id, marker_pose, 
+                                                                              image_msg, cam_to_output);
+
+                        ar_pose_markers.markers.push_back(tag_marker_msg);
+                    }
+                }
+            }
+        }
+        for(size_t i=0; i<num_bundles_; i++)
+        {
+            if(bundles_seen[i])
+            {
+                ar_track_alvar_msgs::AlvarMarker bundle_pose_marker;
+                tf::Transform bundle_pose = poseToTF(bundle_poses_[i]);
+                
+                if(use_ransac_)
+                {
+                    Eigen::Affine3f refined_transform;
+                    if(bundle_refiners_[i].refine(tag_transforms, refined_transform.matrix()))
+                    {
+                        tf:poseEigenToTF(refined_transform.cast<double>(), bundle_pose);
+                    }
+                }
+                
                 tf::StampedTransform cam_to_bundle(bundle_pose, 
                                                    image_msg->header.stamp, 
                                                    image_msg->header.frame_id, 
@@ -230,23 +661,34 @@ AlvarBundleTracker::imageCallback (const sensor_msgs::ImageConstPtr & image_msg)
         }
 
         ar_marker_pub_.publish (ar_pose_markers);
+        rviz_marker_pub_.publish(rviz_pose_markers);
     }
 }
- 
+
 AlvarBundleTracker::AlvarBundleTracker(ros::NodeHandle nh, 
-                                       ros::NodeHandle nh_p, 
+                                       ros::NodeHandle pnh, 
                                        image_transport::ImageTransport it)
 {
-    nh_p.param("default_marker_size", default_marker_size_, 5.0);
-    nh_p.param("publish_marker_tf", publish_marker_tf_, false);
-    nh_p.param("max_new_marker_error", max_new_marker_error_, 0.2);
-    nh_p.param("max_track_error", max_track_error_, 0.2);
-    nh_p.param<string>("output_frame", output_frame_, "");
-      
-    //pn.param("image_topic", image_topic);
-    //pn.param("info_topic", info_topic);
+    pnh.param("default_marker_size", default_marker_size_, 5.0);
+    pnh.param("publish_marker_tf", publish_marker_tf_, false);
+    pnh.param("max_new_marker_error", max_new_marker_error_, 0.2);
+    pnh.param("max_track_error", max_track_error_, 0.2);
+    pnh.param<string>("output_frame", output_frame_, "");
+    
+    bool use_depth;
+    pnh.param("use_depth", use_depth, false);
+    pnh.param("median_filt_size", median_filt_size_, 10);
+    
+    pnh.param("use_ransac", use_ransac_, false);
+    pnh.param("ransac_use_corners", ransac_use_corners_, true);
+    pnh.param("ransac_inlier_threshold", ransac_inlier_threshold_, 0.05);
+    pnh.param("ransac_max_iterations", ransac_max_iterations_, 1000);
+    pnh.param("ransac_refine", ransac_refine_, true);
+    pnh.param("ransac_dense_spacing", ransac_dense_spacing_, 0.0);
+    ransac_use_corners_ = ransac_use_corners_ || ransac_dense_spacing_ > 0.0;
+    
     string bundle_filenames_str;
-    nh_p.param<string>("bundle_filenames", bundle_filenames_str, "");
+    pnh.param<string>("bundle_filenames", bundle_filenames_str, "");
     vector<string> bundle_filenames;
     boost::split(bundle_filenames, bundle_filenames_str, boost::is_any_of(","));
     num_bundles_ = bundle_filenames.size();
@@ -257,30 +699,70 @@ AlvarBundleTracker::AlvarBundleTracker(ros::NodeHandle nh,
     bundle_poses_.resize(num_bundles_);
     master_ids_.resize(num_bundles_);
     bundle_indices_.resize(num_bundles_); 
-
+    
     for(size_t i=0; i<num_bundles_; i++)
     {
         bundle_poses_[i].Reset();
         MultiMarker load_helper;
         string xml_filename = bundle_filenames[i];
-        if(load_helper.Load(xml_filename.c_str(), FILE_FORMAT_XML))
+        boost::algorithm::trim(xml_filename);
+        if(xml_filename.size() > 0 && load_helper.Load(xml_filename.c_str(), FILE_FORMAT_XML))
         {
             size_t fn_start = xml_filename.find_last_of("/\\")+1;
             size_t fn_len = xml_filename.find_last_of(".") - fn_start;
             bundle_names_.push_back(xml_filename.substr(fn_start, fn_len));
             vector<int> id_vector = load_helper.getIndices();
+            
+            std::vector<PointCloudPtr> tag_points;
+            std::vector<double> tag_sizes;
+            
             for(int j=0; j<id_vector.size(); j++)
             {
                 CvPoint3D64f corner1 = load_helper.pointcloud[load_helper.pointcloud_index(id_vector[j], 0)];
                 CvPoint3D64f corner2 = load_helper.pointcloud[load_helper.pointcloud_index(id_vector[j], 1)];
-
+                CvPoint3D64f corner3 = load_helper.pointcloud[load_helper.pointcloud_index(id_vector[j], 2)];
+                CvPoint3D64f corner4 = load_helper.pointcloud[load_helper.pointcloud_index(id_vector[j], 3)];
+                
                 double edge_length = sqrt(pow(corner1.x - corner2.x, 2) 
                       + pow(corner1.y - corner2.y, 2) 
                       + pow(corner1.z - corner2.z, 2)); 
                 marker_detector_.SetMarkerSizeForId(id_vector[j], edge_length);
                 bundle_marker_sizes_[id_vector[j]] = edge_length;
+                
+                if(use_ransac_)
+                {
+                    PointCloudPtr tag_pts(new PointCloud());
+                    tag_pts->points.push_back(PointT((corner1.x + corner2.x + corner3.x + corner4.x)/400.,
+                                                     (corner1.y + corner2.y + corner3.y + corner4.y)/400.,
+                                                     (corner1.z + corner2.z + corner3.z + corner4.z)/400.));
+                    
+                    if(ransac_use_corners_)
+                    {
+                        tag_pts->points.push_back(PointT(corner1.x/100., corner1.y/100., corner1.z/100.));
+                        tag_pts->points.push_back(PointT(corner2.x/100., corner2.y/100., corner2.z/100.));
+                        tag_pts->points.push_back(PointT(corner3.x/100., corner3.y/100., corner3.z/100.));
+                        tag_pts->points.push_back(PointT(corner4.x/100., corner4.y/100., corner4.z/100.));
+                    }
+                    if(ransac_dense_spacing_ > 0)
+                    {
+                        std::pair<int, int> dense_size = ConsensusBundleRefinement::createDenseTagCloud(*tag_pts, *tag_pts, 
+                                                                                                        ransac_dense_spacing_);
+                        tag_pts->width = dense_size.first;
+                        tag_pts->height = dense_size.second;
+                    }
+                    tag_points.push_back(tag_pts);
+                    tag_sizes.push_back(edge_length);
+                }
             }
-
+            if(use_ransac_)
+            {
+                bundle_refiners_.push_back(ConsensusBundleRefinement(id_vector, tag_points, tag_sizes, 
+                                                                     ransac_use_corners_,
+                                                                     ransac_inlier_threshold_, 
+                                                                     ransac_max_iterations_, 
+                                                                     ransac_refine_,
+                                                                     ransac_dense_spacing_));
+            }
             multi_marker_bundles_[i] = boost::shared_ptr<MultiMarkerBundle>(new MultiMarkerBundle(id_vector));
             multi_marker_bundles_[i]->Load(xml_filename.c_str(), FILE_FORMAT_XML);
             master_ids_[i] = multi_marker_bundles_[i]->getMasterId();
@@ -299,8 +781,24 @@ AlvarBundleTracker::AlvarBundleTracker(ros::NodeHandle nh,
     tf_broadcaster_ptr_ = boost::shared_ptr<tf::TransformBroadcaster>(new tf::TransformBroadcaster());
     
     ar_marker_pub_ = nh.advertise < ar_track_alvar_msgs::AlvarMarkers > ("ar_pose_marker", 0);
-    rviz_marker_pub_ = nh.advertise < visualization_msgs::Marker > ("visualization_marker", 0);
+    rviz_marker_pub_ = nh.advertise < visualization_msgs::MarkerArray > ("visualization_marker_array", 0);
     
-    image_sub_ = it.subscribe ("in_camera_image", 1, &AlvarBundleTracker::imageCallback, this);
-    
+    if(use_depth)
+    {
+        publish_marker_tf_ = true;
+        cloud_sub_ = nh.subscribe("in_cloud", 1, &AlvarBundleTracker::pointCloudCallback, this);
+        
+        if(median_filt_size_ > 0)
+        {
+            median_filts_.resize(num_bundles_);
+            for(int i=0; i<num_bundles_; i++)
+            {
+                median_filts_[i] = boost::shared_ptr<ar_track_alvar::MedianFilter>(new ar_track_alvar::MedianFilter(median_filt_size_));
+            }
+        }
+    }
+    else
+    {
+        image_sub_ = it.subscribe ("in_image", 1, &AlvarBundleTracker::imageCallback, this);
+    }
 }

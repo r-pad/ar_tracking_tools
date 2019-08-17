@@ -23,6 +23,8 @@
   <build_depend>ar_track_alvar</build_depend>
   <build_depend>ar_track_alvar_msgs</build_depend>
   <build_depend>tf2_geometry_msgs</build_depend>
+  <build_depend>tf_conversions</build_depend>
+  <build_depend>visualization_msgs</build_depend>
 
   <run_depend>message_runtime</run_depend>
   <run_depend>roscpp</run_depend>
@@ -38,5 +40,7 @@
   <run_depend>ar_track_alvar</run_depend>
   <run_depend>ar_track_alvar_msgs</run_depend>
   <run_depend>tf2_geometry_msgs</run_depend>
+  <run_depend>tf_conversions</run_depend>
+  <run_depend>visualization_msgs</run_depend>
   
 </package>
