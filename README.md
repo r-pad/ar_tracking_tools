@@ -13,12 +13,12 @@ rosrun ar_tracking_tools findMarkerBundlesNoKinect 5.0 0.2 0.2 /image/topic /inf
 ## Tracking a AR Bundle with RANSAC:
 ### Using Depth Camera
 ```
-roslaunch ar_tracking_tools alvarBundleTracker pointcloud_topic:=/pointcloud/topic info_topic:=/info/topic use_depth:=True  bundle_file:="/path/to/bundle1.xml, /path/to/bundle2.xml"
+roslaunch ar_tracking_tools bundle_tracking.launch pointcloud_topic:=/pointcloud/topic info_topic:=/info/topic use_depth:=True  bundle_filenames:="/path/to/bundle1.xml, /path/to/bundle2.xml"
 ```
 
 ### Using Only Image
 ```
-roslaunch ar_tracking_tools alvarBundleTracker image_topic:=/image/topic info_topic:=/info/topic  bundle_file:="/path/to/bundle1.xml, /path/to/bundle2.xml"
+roslaunch ar_tracking_tools bundle_tracking.launch image_topic:=/image/topic info_topic:=/info/topic  bundle_filenames:="/path/to/bundle1.xml, /path/to/bundle2.xml"
 ```
 
 
