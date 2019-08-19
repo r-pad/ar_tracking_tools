@@ -54,7 +54,7 @@ info_topic: Camera info topic
 
 ```
 <node name="bundle_tracker" pkg="ar_tracking_tools" type="alvarBundleTracker" respawn="false" output="screen" >
-    <param name="bundle_filenames" type="string" value="$(arg bundle_files)" />
+    <param name="bundle_filenames" type="string" value="$(arg bundle_filenames)" />
     <param name="publish_marker_tf" type="bool" value="$(arg publish_marker_tf)" />
     <param name="max_new_marker_error" type="double" value="$(arg max_new_marker_error)" />
     <param name="max_track_error" type="double" value="$(arg max_track_error)" />
