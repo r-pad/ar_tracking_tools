@@ -1,6 +1,10 @@
 # AR Tracking Tools
 A set of tools for tracking artags in ros.
 
+## Tag Generation:
+
+See [notebooks](https://github.com/r-pad/ar_tracking_tools/blob/master/notebooks/AR_Marker_Creation_Demo.ipynb) for tutorials.
+
 ## Tracking a multiresolution AR Bundle with defualt bundle tracking:
 ```
 rosrun ar_tracking_tools findMarkerBundlesNoKinect 5.0 0.2 0.2 /image/topic /info/topic /camera/frame /path/to/bundle.xml
