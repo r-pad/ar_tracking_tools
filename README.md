@@ -20,33 +20,33 @@ roslaunch ar_tracking_tools alvarBundleTracker image_topic:=/image/topic info_to
 
 ## AR Bundle Tracking Launch files:
 
-image_topic: Camera image topic
+**image_topic**: Camera image topic
 pointcloud_topic: Point cloud topic
 info_topic: Camera info topic
 
-bundle_filenames: A comma delimited list of xml configuration files. Each bundle will have its own frame, named by the file name and its markers will be displayed in a unique color.
+**bundle_filenames**: A comma delimited list of xml configuration files. Each bundle will have its own frame, named by the file name and its markers will be displayed in a unique color.
 
-use_depth: Flag to use depth data in addition to image data for tag tracking. Will produce more stable tag localization
+**use_depth**: Flag to use depth data in addition to image data for tag tracking. Will produce more stable tag localization
 
-publish_marker_tf: Flag to publish a tf for each marker. Is set to true when using depth.
+**publish_marker_tf**: Flag to publish a tf for each marker. Is set to true when using depth.
 
-max_new_marker_error: A threshold determining when new markers can be detected under uncertainty
+**max_new_marker_error**: A threshold determining when new markers can be detected under uncertainty
 
-max_track_error: A threshold determining how much tracking error can be observed before a tag is considered to have disappeared
+**max_track_error**: A threshold determining how much tracking error can be observed before a tag is considered to have disappeared
 
-median_filter_size: Median filter window size. If set to 0, then no median filtering is done. http://docs.pointclouds.org/1.7.1/classpcl_1_1_median_filter.html
+**median_filter_size**: Median filter window size. If set to 0, then no median filtering is done. http://docs.pointclouds.org/1.7.1/classpcl_1_1_median_filter.html
 
-use_ransac: Flag if RANSAC is used for bundle pose estimation
+**use_ransac**: Flag if RANSAC is used for bundle pose estimation
 
-ransac_use_corners: Flag if corners are used in RANSAC pose estimation. If false, only centers of tags are used, which can be more stable but requires more tags to be detected.
+**ransac_use_corners**: Flag if corners are used in RANSAC pose estimation. If false, only centers of tags are used, which can be more stable but requires more tags to be detected.
 
-ransac_dense_spacing: Distance between points generated on tag. This will weight larger tags more. Only corners and centers will be used if 0.
+**ransac_dense_spacing**: Distance between points generated on tag. This will weight larger tags more. Only corners and centers will be used if 0.
 
-ransac_inlier_threshold: Distance(m) threshold for posints to be considered inliers in RANSAC step 
+**ransac_inlier_threshold**: Distance(m) threshold for posints to be considered inliers in RANSAC step 
 
-ransac_max_iterations: Number of iterations done by RANSAC
+**ransac_max_iterations**: Number of iterations done by RANSAC
 
-ransac_refine: Flag if refinement should be run after RANSAC
+**ransac_refine**: Flag if refinement should be run after RANSAC
 
 ```
 <node name="bundle_tracker" pkg="ar_tracking_tools" type="alvarBundleTracker" respawn="false" output="screen" >
